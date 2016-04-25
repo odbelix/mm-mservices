@@ -1,0 +1,154 @@
+#!/usr/bin/env python
+########################################################################
+# <mservices, Monitor for Services>
+# Copyright (C) 2015  Manuel Moscoso Dominguez manuel.moscoso.d@gmail.com
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+########################################################################
+# Manuel Moscoso Dominguez <manuel.moscoso.d@gmail.com>
+########################################################################
+import time
+import datetime
+import syslog
+import socket
+import commands
+import ConfigParser
+import os
+import sys
+
+# GLOBAL VARIABLES
+period = 0
+sockettimeout = 10
+maxcheck = 5
+
+def checkFileExits(configfile):
+	if os.path.exists(configfile) == False :
+		return False
+	else:
+		if os.path.isdir(configfile) == True:
+			return False
+		else:
+			return True
+
+def getConfiguration():
+    global period, maxcheck, sockettimeout
+    
+    config = ConfigParser.RawConfigParser()
+    path = '/etc/mm-monitor/mmmservice.cfg'
+    if checkFileExits(path) == False:
+        syslog.syslog(syslog.LOG_INFO,"Configuration file does not exists")
+        sys.exit("Configuration file does not exists (%s)" % (path))
+        sys.exit(0)
+
+    config.read(path)
+    datasrv = {}
+    for section in config.sections():
+        if "srv" in section: 
+            datasrv[section] = {}
+            options = config.options(section)
+            for option in options:
+                datasrv[section][option] = config.get(section, option)
+        if "monitor" in section:
+            maxcheck = int(config.get(section,"maxcheck"))
+            sockettimeout = int(config.get(section,"sockettimeout"))
+            period = int(config.get(section,"period"))
+            
+
+
+            
+    return datasrv    
+    
+def startBackup(machine):
+    output = commands.getstatusoutput(machine)
+    syslog.syslog(syslog.LOG_INFO,output[1])
+    if output[0] == 0:
+        return True
+    else:
+        return False
+
+def checkBackup(machine):
+    output = commands.getstatusoutput(machine)
+    if output[1] == "1":
+        return True
+    else:
+        return False
+        
+def checkPortService(host,port):
+    global sockettimeout
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(sockettimeout)
+        result = sock.connect_ex((host,port))
+        sock.close()
+        if result == 0:
+             syslog.syslog(syslog.LOG_INFO,"Service port[%d] is Open in the Host[%s]" % (port,host))
+             return True
+        else:
+            syslog.syslog(syslog.LOG_ERR,"Error: Service port[%d] is not Open in the Host[%s]:error(%s) " % (port,host,str(result)))
+            return False
+    except socket.error as e:
+        syslog.syslog(syslog.LOG_ERR,"Error: " + str(e))
+        return False
+
+
+def main():
+    servicio = True	
+    global period
+    global sockettimeout
+    global maxcheck
+    ## Getting HOST-SRV from configuration file    
+    hosts = getConfiguration()    
+        
+    secondCount = 0
+    
+    
+    while servicio == True:
+        timeNow = datetime.datetime.now()
+        seconds = timeNow.second
+        if seconds % period == 0:
+            syslog.syslog(syslog.LOG_INFO,"------------ INIT mservice - Checking --------------")
+            for host in hosts:
+                if checkBackup(hosts[host]["checkbackup"]) is False:
+                    checkSRVHOST = checkPortService(hosts[host]["address"],int(hosts[host]["serviceport"]))
+                    if checkSRVHOST is False:
+                        syslog.syslog(syslog.LOG_INFO,"Check (%d): SRV-Host is down or service has problems [%s / %s / %s] " % (maxcheck,host,hosts[host]["address"],hosts[host]["serviceport"]))
+                        maxcheck = maxcheck - 1
+                    if maxcheck == 0:
+                        maxcheck = 3
+                        hosts[host]["state"] = "on"
+                        syslog.syslog(syslog.LOG_INFO,"Starting Backup HOST for service: %s / %s / %s. " % (host,hosts[host]["address"],hosts[host]["serviceport"]))
+                        #### Instruction for turn on the VM
+                        ####
+                        syslog.syslog(syslog.LOG_INFO,"Executing: %s " % hosts[host]["backup"])
+                        if startBackup(hosts[host]["backup"]):
+                            syslog.syslog(syslog.LOG_INFO,"Successful implementation process")
+                            hosts[host]["state"] = "on"
+                        else:
+                            syslog.syslog(syslog.LOG_INFO,"Problema para iniciar el backup. contact the SysAdmin")
+                    else:
+                        syslog.syslog(syslog.LOG_INFO,"Service is OK: %s / %s / %s. " % (host,hosts[host]["address"],hosts[host]["serviceport"]))
+                else:
+                    syslog.syslog(syslog.LOG_INFO,"Backup [%s/%s/%s] is Running" % (host,hosts[host]["address"],hosts[host]["serviceport"]))
+            
+            syslog.syslog(syslog.LOG_INFO,"------------ FINISH mservice -------------- ")
+            secondCount = 0
+        else:
+            secondCount = secondCount + 1
+        
+        time.sleep(1)
+        
+    
+if __name__ == "__main__":	
+	main()
