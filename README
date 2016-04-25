@@ -1,0 +1,14 @@
+MM-mservice
+=============
+
+This is a Software for managment High Availability of Virtual Machines 
+(VMs).
+
+- The configuration files is for VirtualBox 5.0
+- Work with python 2.7
+- Management Daemon for GNU/Debian distribution and and derivatives. 
+- For enable the Daemon you must use systemctl or systemd-sysv-install
+
+
+  
+

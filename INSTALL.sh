@@ -78,7 +78,7 @@ case "$1" in
 		cp $INITSCRIPT_NAME $INITSCRIPT_PATH
 		chmod 700 $INITSCRIPT_PATH
 		chown root:root $INITSCRIPT_PATH
-		/lib/systemd/systemd-sysv-install enable $INITSCRIPT_NAME
+		##/lib/systemd/systemd-sysv-install enable $INITSCRIPT_NAME
         
 		echo "${GREEN}Installing $CONFIG_NAME in $CONFIG_PATH ${NC}"
 		if [ ! -d "$CONFIG_DIR" ]; then
